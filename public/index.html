@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>SlideCue — 발표자 화면</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0a; color: #fff; overflow: hidden; }
+  #upload-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 20px; }
+  #upload-screen h1 { font-size: 48px; }
+  #upload-screen p { color: #888; }
+  #drop-zone { border: 2px dashed #555; border-radius: 12px; padding: 60px 100px; cursor: pointer; transition: 0.2s; }
+  #drop-zone:hover { border-color: #888; background: #1a1a1a; }
+  #viewer { display: none; height: 100vh; position: relative; }
+  #pdf-canvas { display: block; margin: 0 auto; max-height: 100vh; max-width: 100vw; }
+  #qr-panel { position: fixed; top: 20px; right: 20px; background: #fff; padding: 16px; border-radius: 12px; text-align: center; color: #000; }
+  #qr-panel.hidden { display: none; }
+  #qr-panel p { font-size: 12px; margin-top: 8px; font-weight: 600; }
+  #status { position: fixed; bottom: 20px; left: 20px; font-size: 14px; color: #888; }
+  #laser { position: fixed; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,0,0,0.8); box-shadow: 0 0 20px red; pointer-events: none; display: none; transform: translate(-50%, -50%); }
+  #page-info { position: fixed; bottom: 20px; right: 20px; font-size: 14px; color: #888; }
+</style>
+</head>
+<body>
+
+<div id="upload-screen">
+  <h1>SlideCue</h1>
+  <p>PDF 파일을 올리면 발표를 시작할 수 있습니다</p>
+  <div id="drop-zone">
+    <p>📄 여기에 PDF를 드래그하거나 클릭해서 선택</p>
+  </div>
+  <input type="file" id="file-input" accept="application/pdf" style="display:none">
+</div>
+
+<div id="viewer">
+  <canvas id="pdf-canvas"></canvas>
+  <div id="qr-panel">
+    <div id="qrcode"></div>
+    <p>폰으로 QR을 찍어<br>리모컨 연결</p>
+  </div>
+  <div id="status">⚪ 리모컨 대기 중...</div>
+  <div id="page-info">- / -</div>
+  <div id="laser"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let pdfDoc = null, currentPage = 1, totalPages = 0;
+const canvas = document.getElementById('pdf-canvas');
+const ctx = canvas.getContext('2d');
+
+// 세션 ID 생성 (4자리 랜덤)
+const sessionId = Math.random().toString(36).substring(2, 6).toUpperCase();
+const socket = io();
+socket.emit('create-session', sessionId);
+
+// 파일 선택
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#fff'; });
+dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#555'; });
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  if (e.dataTransfer.files[0]) loadPDF(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadPDF(e.target.files[0]); });
+
+function loadPDF(file) {
+  const reader = new FileReader();
+  reader.onload = async e => {
+    pdfDoc = await pdfjsLib.getDocument({ data: e.target.result }).promise;
+    totalPages = pdfDoc.numPages;
+    document.getElementById('upload-screen').style.display = 'none';
+    document.getElementById('viewer').style.display = 'block';
+    renderPage(1);
+    showQR();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function renderPage(num) {
+  currentPage = num;
+  const page = await pdfDoc.getPage(num);
+  const viewport = page.getViewport({ scale: 2 });
+  canvas.height = viewport.height;
+  canvas.width = viewport.width;
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  document.getElementById('page-info').textContent = `${num} / ${totalPages}`;
+}
+
+function showQR() {
+  const url = `${location.origin}/r/${sessionId}`;
+  new QRCode(document.getElementById('qrcode'), { text: url, width: 140, height: 140 });
+}
+
+// 리모컨으로부터 컨트롤 신호 받기
+socket.on('remote-connected', () => {
+  document.getElementById('status').textContent = '🟢 리모컨 연결됨';
+  setTimeout(() => document.getElementById('qr-panel').classList.add('hidden'), 1500);
+});
+
+socket.on('control', ({ action, payload }) => {
+  if (action === 'next' && currentPage < totalPages) renderPage(currentPage + 1);
+  if (action === 'prev' && currentPage > 1) renderPage(currentPage - 1);
+  if (action === 'laser') {
+    const laser = document.getElementById('laser');
+    laser.style.display = 'block';
+    laser.style.left = (payload.x * window.innerWidth) + 'px';
+    laser.style.top = (payload.y * window.innerHeight) + 'px';
+  }
+  if (action === 'laser-off') document.getElementById('laser').style.display = 'none';
+});
+
+// 키보드로도 넘길 수 있게
+document.addEventListener('keydown', e => {
+  if (!pdfDoc) return;
+  if (e.key === 'ArrowRight' || e.key === ' ') renderPage(Math.min(currentPage + 1, totalPages));
+  if (e.key === 'ArrowLeft') renderPage(Math.max(currentPage - 1, 1));
+});
+</script>
+</body>
+</html>

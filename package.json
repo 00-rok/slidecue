@@ -1,0 +1,13 @@
+{
+  "name": "slidecue",
+  "version": "0.1.0",
+  "description": "설치 없이 웹 접속만으로 사용하는 PDF 발표 리모컨",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}

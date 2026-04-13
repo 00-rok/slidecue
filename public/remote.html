@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>SlideCue 리모컨</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0a; color: #fff; height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 16px; text-align: center; border-bottom: 1px solid #222; }
+  header h1 { font-size: 18px; }
+  #timer { font-size: 32px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  #buttons { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; }
+  button { font-size: 20px; font-weight: 600; border: none; border-radius: 16px; background: #1f1f1f; color: #fff; cursor: pointer; transition: 0.1s; }
+  button:active { background: #3a3a3a; transform: scale(0.97); }
+  #btn-prev, #btn-next { font-size: 28px; }
+  #btn-next { background: #2563eb; }
+  #btn-next:active { background: #1d4ed8; }
+  #btn-laser { grid-column: span 2; background: #dc2626; height: 100px; }
+  #btn-laser:active { background: #991b1b; }
+  #btn-timer { grid-column: span 2; background: #1f1f1f; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SlideCue 리모컨</h1>
+  <div id="timer">00:00</div>
+</header>
+
+<div id="buttons">
+  <button id="btn-prev">◀ 이전</button>
+  <button id="btn-next">다음 ▶</button>
+  <button id="btn-laser">🔴 레이저 (꾹 누르기)</button>
+  <button id="btn-timer">⏱ 타이머 시작</button>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const sessionId = location.pathname.split('/').pop();
+const socket = io();
+socket.emit('join-session', sessionId);
+
+function send(action, payload = {}) {
+  socket.emit('control', { sessionId, action, payload });
+  if (navigator.vibrate) navigator.vibrate(15);
+}
+
+document.getElementById('btn-next').onclick = () => send('next');
+document.getElementById('btn-prev').onclick = () => send('prev');
+
+// 레이저: 꾹 누르고 있는 동안만 켜짐, 터치 위치에 따라 움직임
+const laserBtn = document.getElementById('btn-laser');
+let laserActive = false;
+
+function laserMove(e) {
+  if (!laserActive) return;
+  const t = e.touches ? e.touches[0] : e;
+  // 버튼 기준 좌표를 화면 비율(0~1)로 변환
+  const rect = laserBtn.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width));
+  const y = Math.max(0, Math.min(1, (t.clientY - rect.top) / rect.height));
+  send('laser', { x, y });
+}
+
+laserBtn.addEventListener('touchstart', e => {
+  e.preventDefault();
+  laserActive = true;
+  laserMove(e);
+});
+laserBtn.addEventListener('touchmove', e => { e.preventDefault(); laserMove(e); });
+laserBtn.addEventListener('touchend', () => {
+  laserActive = false;
+  send('laser-off');
+});
+
+// 타이머
+let timerStart = null, timerInterval = null;
+document.getElementById('btn-timer').onclick = () => {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    timerStart = null;
+    document.getElementById('timer').textContent = '00:00';
+    document.getElementById('btn-timer').textContent = '⏱ 타이머 시작';
+  } else {
+    timerStart = Date.now();
+    document.getElementById('btn-timer').textContent = '⏹ 타이머 정지';
+    timerInterval = setInterval(() => {
+      const s = Math.floor((Date.now() - timerStart) / 1000);
+      const m = Math.floor(s / 60).toString().padStart(2, '0');
+      const ss = (s % 60).toString().padStart(2, '0');
+      document.getElementById('timer').textContent = `${m}:${ss}`;
+    }, 1000);
+  }
+};
+
+socket.on('session-error', msg => alert(msg));
+</script>
+</body>
+</html>
