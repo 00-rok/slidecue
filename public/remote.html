@@ -7,9 +7,11 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
   body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0a; color: #fff; height: 100vh; display: flex; flex-direction: column; }
-  header { padding: 16px; text-align: center; border-bottom: 1px solid #222; }
+  header { padding: 16px; text-align: center; border-bottom: 1px solid #222; position: relative; }
   header h1 { font-size: 18px; }
   #timer { font-size: 32px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  #vibrate-toggle { position: absolute; top: 16px; right: 16px; background: transparent; border: 1px solid #333; color: #aaa; border-radius: 20px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #vibrate-toggle.on { border-color: #2563eb; color: #2563eb; }
   #buttons { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; }
   button { font-size: 20px; font-weight: 600; border: none; border-radius: 16px; background: #1f1f1f; color: #fff; cursor: pointer; transition: 0.1s; }
   button:active { background: #3a3a3a; transform: scale(0.97); }
@@ -26,6 +28,7 @@
 <header>
   <h1>SlideCue 리모컨</h1>
   <div id="timer">00:00</div>
+  <button id="vibrate-toggle" class="on" onclick="toggleVibrate()">📳 진동 ON</button>
 </header>
 
 <div id="buttons">
@@ -41,22 +44,35 @@ const sessionId = location.pathname.split('/').pop();
 const socket = io();
 socket.emit('join-session', sessionId);
 
+// 진동 설정 (기본값: ON)
+let vibrateOn = true;
+
+function toggleVibrate() {
+  vibrateOn = !vibrateOn;
+  const btn = document.getElementById('vibrate-toggle');
+  if (vibrateOn) {
+    btn.textContent = '📳 진동 ON';
+    btn.classList.add('on');
+  } else {
+    btn.textContent = '📴 진동 OFF';
+    btn.classList.remove('on');
+  }
+}
+
 function send(action, payload = {}) {
   socket.emit('control', { sessionId, action, payload });
-  if (navigator.vibrate) navigator.vibrate(15);
+  if (vibrateOn && navigator.vibrate) navigator.vibrate(15);
 }
 
 document.getElementById('btn-next').onclick = () => send('next');
 document.getElementById('btn-prev').onclick = () => send('prev');
 
-// 레이저: 꾹 누르고 있는 동안만 켜짐, 터치 위치에 따라 움직임
 const laserBtn = document.getElementById('btn-laser');
 let laserActive = false;
 
 function laserMove(e) {
   if (!laserActive) return;
   const t = e.touches ? e.touches[0] : e;
-  // 버튼 기준 좌표를 화면 비율(0~1)로 변환
   const rect = laserBtn.getBoundingClientRect();
   const x = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width));
   const y = Math.max(0, Math.min(1, (t.clientY - rect.top) / rect.height));
@@ -74,7 +90,6 @@ laserBtn.addEventListener('touchend', () => {
   send('laser-off');
 });
 
-// 타이머
 let timerStart = null, timerInterval = null;
 document.getElementById('btn-timer').onclick = () => {
   if (timerInterval) {
