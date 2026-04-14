@@ -19,6 +19,8 @@
   #status { position: fixed; bottom: 20px; left: 20px; font-size: 14px; color: #888; }
   #laser { position: fixed; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,0,0,0.8); box-shadow: 0 0 20px red; pointer-events: none; display: none; transform: translate(-50%, -50%); }
   #page-info { position: fixed; bottom: 20px; right: 20px; font-size: 14px; color: #888; }
+  #reset-btn { position: fixed; top: 20px; left: 20px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; opacity: 0.3; transition: opacity 0.2s; font-family: inherit; }
+  #reset-btn:hover { opacity: 1; background: rgba(255,255,255,0.15); }
 </style>
 </head>
 <body>
@@ -34,6 +36,7 @@
 
 <div id="viewer">
   <canvas id="pdf-canvas"></canvas>
+  <button id="reset-btn" onclick="resetPDF()">✕ PDF 다시 올리기</button>
   <div id="qr-panel">
     <div id="qrcode"></div>
     <p>폰으로 QR을 찍어<br>리모컨 연결</p>
@@ -53,12 +56,10 @@ let pdfDoc = null, currentPage = 1, totalPages = 0;
 const canvas = document.getElementById('pdf-canvas');
 const ctx = canvas.getContext('2d');
 
-// 세션 ID 생성 (4자리 랜덤)
 const sessionId = Math.random().toString(36).substring(2, 6).toUpperCase();
 const socket = io();
 socket.emit('create-session', sessionId);
 
-// 파일 선택
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 dropZone.addEventListener('click', () => fileInput.click());
@@ -83,6 +84,23 @@ function loadPDF(file) {
   reader.readAsArrayBuffer(file);
 }
 
+function resetPDF() {
+  if (!confirm('현재 PDF를 닫고 다시 올리시겠습니까?')) return;
+  pdfDoc = null;
+  currentPage = 1;
+  totalPages = 0;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  fileInput.value = '';
+  const qrPanel = document.getElementById('qr-panel');
+  qrPanel.classList.remove('hidden');
+  document.getElementById('qrcode').innerHTML = '';
+  showQR();
+  document.getElementById('status').textContent = '⚪ 리모컨 대기 중...';
+  document.getElementById('page-info').textContent = '- / -';
+  document.getElementById('viewer').style.display = 'none';
+  document.getElementById('upload-screen').style.display = 'flex';
+}
+
 async function renderPage(num) {
   currentPage = num;
   const page = await pdfDoc.getPage(num);
@@ -98,7 +116,6 @@ function showQR() {
   new QRCode(document.getElementById('qrcode'), { text: url, width: 140, height: 140 });
 }
 
-// 리모컨으로부터 컨트롤 신호 받기
 socket.on('remote-connected', () => {
   document.getElementById('status').textContent = '🟢 리모컨 연결됨';
   setTimeout(() => document.getElementById('qr-panel').classList.add('hidden'), 1500);
@@ -116,7 +133,6 @@ socket.on('control', ({ action, payload }) => {
   if (action === 'laser-off') document.getElementById('laser').style.display = 'none';
 });
 
-// 키보드로도 넘길 수 있게
 document.addEventListener('keydown', e => {
   if (!pdfDoc) return;
   if (e.key === 'ArrowRight' || e.key === ' ') renderPage(Math.min(currentPage + 1, totalPages));
