@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>SlideCue Q&A</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0a; color: #fff; min-height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 16px; text-align: center; border-bottom: 1px solid #222; }
+  header h1 { font-size: 18px; }
+  header p { font-size: 13px; color: #888; margin-top: 4px; }
+  #input-area { padding: 16px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid #222; }
+  textarea { width: 100%; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; color: #fff; padding: 14px; font-size: 16px; font-family: inherit; resize: none; height: 80px; }
+  textarea:focus { outline: none; border-color: #2563eb; }
+  #submit-btn { background: #2563eb; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  #submit-btn:active { background: #1d4ed8; }
+  #list-title { padding: 16px 16px 8px; font-size: 14px; color: #888; }
+  #questions { flex: 1; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .q-card { background: #1a1a1a; border-radius: 12px; padding: 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .q-text { flex: 1; font-size: 15px; line-height: 1.4; word-break: break-word; }
+  .like-btn { background: #2a2a2a; border: none; border-radius: 20px; color: #fff; padding: 8px 12px; font-size: 14px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+  .like-btn.liked { background: #dc2626; }
+  #empty { color: #555; text-align: center; padding: 40px 0; font-size: 14px; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #2563eb; color: #fff; padding: 12px 20px; border-radius: 20px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>💬 질문하기</h1>
+  <p>익명으로 질문을 남겨보세요</p>
+</header>
+
+<div id="input-area">
+  <textarea id="q-input" placeholder="발표자에게 궁금한 점을 입력하세요" maxlength="300"></textarea>
+  <button id="submit-btn">질문 보내기</button>
+</div>
+
+<div id="list-title">올라온 질문</div>
+<div id="questions">
+  <div id="empty">아직 질문이 없습니다.<br>첫 질문을 남겨보세요!</div>
+</div>
+
+<div id="toast">질문이 등록되었습니다</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const sessionId = location.pathname.split('/').pop();
+const socket = io();
+socket.emit('join-qna', sessionId);
+
+// 내가 좋아요 누른 질문 기억 (중복 방지)
+const likedSet = new Set();
+
+const input = document.getElementById('q-input');
+const submitBtn = document.getElementById('submit-btn');
+
+submitBtn.onclick = () => {
+  const text = input.value.trim();
+  if (!text) return;
+  socket.emit('submit-question', { sessionId, text });
+  input.value = '';
+  showToast('질문이 등록되었습니다');
+};
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+function likeQuestion(id) {
+  if (likedSet.has(id)) return; // 이미 누름
+  likedSet.add(id);
+  socket.emit('like-question', { sessionId, questionId: id });
+}
+
+socket.on('questions-update', (questions) => {
+  const container = document.getElementById('questions');
+  if (!questions || questions.length === 0) {
+    container.innerHTML = '<div id="empty">아직 질문이 없습니다.<br>첫 질문을 남겨보세요!</div>';
+    return;
+  }
+  // 좋아요 많은 순 정렬
+  const sorted = [...questions].sort((a, b) => b.likes - a.likes);
+  container.innerHTML = '';
+  sorted.forEach(q => {
+    const card = document.createElement('div');
+    card.className = 'q-card';
+    const liked = likedSet.has(q.id);
+    card.innerHTML = `
+      <div class="q-text"></div>
+      <button class="like-btn ${liked ? 'liked' : ''}">👍 ${q.likes}</button>
+    `;
+    card.querySelector('.q-text').textContent = q.text;
+    card.querySelector('.like-btn').onclick = () => likeQuestion(q.id);
+    container.appendChild(card);
+  });
+});
+
+socket.on('session-error', msg => {
+  document.body.innerHTML = '<div style="padding:40px;text-align:center;color:#888">세션을 찾을 수 없습니다.<br>발표자에게 QR을 다시 확인해주세요.</div>';
+});
+</script>
+</body>
+</html>
