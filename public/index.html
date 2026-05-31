@@ -6,25 +6,40 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0a; color: #fff; overflow: hidden; }
-  #upload-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 20px; }
+
+  #upload-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 18px; }
   #upload-screen h1 { font-size: 48px; }
   #upload-screen p { color: #888; }
-  #drop-zone { border: 2px dashed #555; border-radius: 12px; padding: 60px 100px; cursor: pointer; transition: 0.2s; }
+  #drop-zone { border: 2px dashed #555; border-radius: 12px; padding: 50px 90px; cursor: pointer; transition: 0.2s; }
   #drop-zone:hover { border-color: #888; background: #1a1a1a; }
+  #pre-qna { margin-top: 10px; background: #141414; border: 1px solid #2a2a2a; border-radius: 16px; padding: 24px 32px; text-align: center; }
+  #pre-qna h3 { font-size: 18px; margin-bottom: 4px; }
+  #pre-qna p { font-size: 13px; color: #888; margin-bottom: 14px; }
+  #pre-qrcode { display: inline-block; background: #fff; padding: 12px; border-radius: 12px; }
+
   #viewer { display: none; height: 100vh; position: relative; }
   #pdf-canvas { display: block; margin: 0 auto; max-height: 100vh; max-width: 100vw; }
-  #qr-panel { position: fixed; top: 20px; right: 20px; background: #fff; padding: 16px; border-radius: 12px; text-align: center; color: #000; display: flex; gap: 16px; }
-  #qr-panel.hidden { display: none; }
-  .qr-box p { font-size: 12px; margin-top: 8px; font-weight: 600; }
+
+  #qna-qr-panel { position: fixed; top: 20px; left: 20px; background: #fff; padding: 20px; border-radius: 16px; text-align: center; color: #000; z-index: 5; }
+  #qna-qr-panel.hidden { display: none; }
+  #qna-qr-panel h3 { font-size: 16px; margin-bottom: 4px; }
+  #qna-qr-panel p { font-size: 13px; color: #555; margin-top: 10px; font-weight: 600; }
+
+  /* 발표자용 리모컨 QR (오른쪽 아래, 작게) */
+  #remote-qr-panel { position: fixed; bottom: 20px; right: 20px; background: #fff; padding: 12px; border-radius: 12px; text-align: center; color: #000; z-index: 5; opacity: 0.85; }
+  #remote-qr-panel.hidden { display: none; }
+  #remote-qr-panel p { font-size: 11px; color: #555; margin-top: 6px; font-weight: 600; }
+
   #status { position: fixed; bottom: 20px; left: 20px; font-size: 14px; color: #888; }
   #laser { position: fixed; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,0,0,0.8); box-shadow: 0 0 20px red; pointer-events: none; display: none; transform: translate(-50%, -50%); }
-  #page-info { position: fixed; bottom: 20px; right: 20px; font-size: 14px; color: #888; }
+  #page-info { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 14px; color: #888; }
+
   .top-btn { position: fixed; top: 20px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; opacity: 0.3; transition: opacity 0.2s; font-family: inherit; }
   .top-btn:hover { opacity: 1; background: rgba(255,255,255,0.15); }
-  #reset-btn { left: 20px; }
-  #qr-btn { left: 160px; }
-  #qna-btn { left: 290px; }
-  /* 질문 패널 */
+  #reset-btn { right: 20px; }
+  #qr-toggle-btn { right: 160px; }
+  #qna-toggle-btn { right: 320px; }
+
   #qna-panel { position: fixed; top: 0; right: -400px; width: 380px; height: 100vh; background: #141414; border-left: 1px solid #2a2a2a; transition: right 0.3s; padding: 20px; overflow-y: auto; z-index: 10; }
   #qna-panel.open { right: 0; }
   #qna-panel h2 { font-size: 18px; margin-bottom: 4px; }
@@ -33,7 +48,6 @@
   .pq-text { flex: 1; font-size: 14px; line-height: 1.4; word-break: break-word; }
   .pq-likes { background: #2a2a2a; border-radius: 16px; padding: 4px 10px; font-size: 13px; white-space: nowrap; }
   #pq-empty { color: #555; text-align: center; padding: 30px 0; font-size: 13px; }
-  #qna-count { position: fixed; top: 20px; left: 290px; }
 </style>
 </head>
 <body>
@@ -45,23 +59,31 @@
     <p>📄 여기에 PDF를 드래그하거나 클릭해서 선택</p>
   </div>
   <input type="file" id="file-input" accept="application/pdf" style="display:none">
+  <div id="pre-qna">
+    <h3>💬 청중 질문 받기</h3>
+    <p>발표 시작 전, 청중에게 이 QR을 안내하세요</p>
+    <div id="pre-qrcode"></div>
+  </div>
 </div>
 
 <div id="viewer">
   <canvas id="pdf-canvas"></canvas>
-  <button id="reset-btn" class="top-btn" onclick="resetPDF()">✕ PDF 다시 올리기</button>
-  <button id="qr-btn" class="top-btn" onclick="toggleQR()">🔄 QR 다시 보기</button>
-  <button id="qna-btn" class="top-btn" onclick="toggleQnA()">💬 질문 보기 (0)</button>
-  <div id="qr-panel">
-    <div class="qr-box">
-      <div id="qrcode-remote"></div>
-      <p>리모컨 연결</p>
-    </div>
-    <div class="qr-box">
-      <div id="qrcode-qna"></div>
-      <p>청중 질문</p>
-    </div>
+
+  <div id="qna-qr-panel">
+    <h3>💬 질문은 여기로</h3>
+    <div id="qrcode-qna"></div>
+    <p>휴대폰으로 QR을 찍어<br>질문을 남겨주세요</p>
   </div>
+
+  <div id="remote-qr-panel">
+    <div id="qrcode-remote"></div>
+    <p>🎮 리모컨 연결</p>
+  </div>
+
+  <button id="reset-btn" class="top-btn" onclick="resetPDF()">✕ PDF 다시 올리기</button>
+  <button id="qr-toggle-btn" class="top-btn" onclick="toggleQnaQR()">🙈 질문 QR 숨기기</button>
+  <button id="qna-toggle-btn" class="top-btn" onclick="togglePanel()">💬 질문 보기 (0)</button>
+
   <div id="status">⚪ 리모컨 대기 중...</div>
   <div id="page-info">- / -</div>
   <div id="laser"></div>
@@ -69,9 +91,7 @@
   <div id="qna-panel">
     <h2>💬 청중 질문</h2>
     <div class="sub">좋아요 많은 순으로 정렬됩니다</div>
-    <div id="pq-list">
-      <div id="pq-empty">아직 질문이 없습니다.</div>
-    </div>
+    <div id="pq-list"><div id="pq-empty">아직 질문이 없습니다.</div></div>
   </div>
 </div>
 
@@ -89,17 +109,20 @@ const sessionId = Math.random().toString(36).substring(2, 6).toUpperCase();
 const socket = io();
 socket.emit('create-session', sessionId);
 
+const qnaUrl = `${location.origin}/q/${sessionId}`;
+const remoteUrl = `${location.origin}/r/${sessionId}`;
+
+new QRCode(document.getElementById('pre-qrcode'), { text: qnaUrl, width: 160, height: 160 });
+
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#fff'; });
 dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#555'; });
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  if (e.dataTransfer.files[0]) loadPDF(e.dataTransfer.files[0]);
-});
+dropZone.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) loadPDF(e.dataTransfer.files[0]); });
 fileInput.addEventListener('change', e => { if (e.target.files[0]) loadPDF(e.target.files[0]); });
 
+let qrCreated = false;
 function loadPDF(file) {
   const reader = new FileReader();
   reader.onload = async e => {
@@ -108,7 +131,11 @@ function loadPDF(file) {
     document.getElementById('upload-screen').style.display = 'none';
     document.getElementById('viewer').style.display = 'block';
     renderPage(1);
-    showQR();
+    if (!qrCreated) {
+      new QRCode(document.getElementById('qrcode-qna'), { text: qnaUrl, width: 180, height: 180 });
+      new QRCode(document.getElementById('qrcode-remote'), { text: remoteUrl, width: 100, height: 100 });
+      qrCreated = true;
+    }
   };
   reader.readAsArrayBuffer(file);
 }
@@ -118,21 +145,20 @@ function resetPDF() {
   pdfDoc = null; currentPage = 1; totalPages = 0;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   fileInput.value = '';
-  document.getElementById('qr-panel').classList.remove('hidden');
-  document.getElementById('qrcode-remote').innerHTML = '';
-  document.getElementById('qrcode-qna').innerHTML = '';
-  showQR();
   document.getElementById('status').textContent = '⚪ 리모컨 대기 중...';
   document.getElementById('page-info').textContent = '- / -';
   document.getElementById('viewer').style.display = 'none';
   document.getElementById('upload-screen').style.display = 'flex';
 }
 
-function toggleQR() {
-  document.getElementById('qr-panel').classList.toggle('hidden');
+function toggleQnaQR() {
+  const panel = document.getElementById('qna-qr-panel');
+  const btn = document.getElementById('qr-toggle-btn');
+  panel.classList.toggle('hidden');
+  btn.textContent = panel.classList.contains('hidden') ? '👀 질문 QR 보이기' : '🙈 질문 QR 숨기기';
 }
 
-function toggleQnA() {
+function togglePanel() {
   document.getElementById('qna-panel').classList.toggle('open');
 }
 
@@ -146,15 +172,14 @@ async function renderPage(num) {
   document.getElementById('page-info').textContent = `${num} / ${totalPages}`;
 }
 
-function showQR() {
-  const remoteUrl = `${location.origin}/r/${sessionId}`;
-  const qnaUrl = `${location.origin}/q/${sessionId}`;
-  new QRCode(document.getElementById('qrcode-remote'), { text: remoteUrl, width: 120, height: 120 });
-  new QRCode(document.getElementById('qrcode-qna'), { text: qnaUrl, width: 120, height: 120 });
-}
-
 socket.on('remote-connected', () => {
   document.getElementById('status').textContent = '🟢 리모컨 연결됨';
+  // 리모컨 연결되면 리모컨 QR 자동으로 숨김
+  document.getElementById('remote-qr-panel').classList.add('hidden');
+});
+socket.on('remote-disconnected', () => {
+  document.getElementById('status').textContent = '⚪ 리모컨 대기 중...';
+  document.getElementById('remote-qr-panel').classList.remove('hidden');
 });
 
 socket.on('control', ({ action, payload }) => {
@@ -169,10 +194,9 @@ socket.on('control', ({ action, payload }) => {
   if (action === 'laser-off') document.getElementById('laser').style.display = 'none';
 });
 
-// 질문 목록 갱신
 socket.on('questions-update', (questions) => {
   const list = document.getElementById('pq-list');
-  document.getElementById('qna-btn').textContent = `💬 질문 보기 (${questions.length})`;
+  document.getElementById('qna-toggle-btn').textContent = `💬 질문 보기 (${questions.length})`;
   if (!questions || questions.length === 0) {
     list.innerHTML = '<div id="pq-empty">아직 질문이 없습니다.</div>';
     return;
